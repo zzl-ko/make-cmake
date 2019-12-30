@@ -1,8 +1,9 @@
 #include <iostream>
 #include "hello.hxx"
 #include "module.h"
-#include "calc/calc.h"
-#include "utility/utility.h"
+// 如下“修正包含头文件路径的问题”之后，包含子目录中的头文件不用写全路径
+#include "calc.h"
+#include "utility.h"
 
 using namespace std;
 

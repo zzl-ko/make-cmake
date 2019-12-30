@@ -16,7 +16,7 @@
 #              4.对本Makefile可用的目标及相关帮助信息可通过make help得到。
 # History    : 参见文件末尾
 #==============================================================================
-MK_VERSION  := 0.5
+MK_VERSION  := 0.6
 
 # 定制段，工程配置选项 START
 ###############################################################################
@@ -182,6 +182,16 @@ else
   SRCDIRS = .
 endif
 
+# Get the root path of current project.
+ROOT_PATH = $(shell pwd)
+
+# Auto assign headers abspath of curr project for compiler.
+ifdef INCLUDES
+  CURR_DIRS = $(shell find . \( -path ./$(BIN_PATH) -o -path ./$(BUILD_PATH) \) \
+                            -prune -o -type d ! -name "." -print )
+  INCLUDES += $(subst ./, -I$(ROOT_PATH)/, $(CURR_DIRS))
+endif
+
 # The source and header file types.
 # .c indicates C source files, and others C++ ones.
 SRCEXTS = .c .C .cc .cpp .CPP .c++ .cxx .cp
@@ -197,12 +207,12 @@ DEPENDS = $(OBJECTS:.o=.d)
 
 DEP_OPT = $(shell if `$(CC) --version | grep $(CC) >/dev/null`; then \
                   echo "-MG -MM -MP"; else echo "-M"; fi )
-DEPEND      = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(DEP_OPT)
+DEPEND      = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES) $(DEP_OPT)
 DEPEND.d    = $(subst -g ,,$(DEPEND))
 COMPILE.c   = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES)
 COMPILE.cxx = $(CXX) $(CXXFLAGS) $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES)
-LINK.c      = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(LDFLAGS)
-LINK.cxx    = $(CXX) $(CXXFLAGS) $(MY_CFLAGS) $(CPPFLAGS) $(LDFLAGS)
+LINK.c      = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS)
+LINK.cxx    = $(CXX) $(CXXFLAGS) $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS)
 
 # Verbose option, to output compile and link commands
 export Verbose := false
@@ -444,6 +454,7 @@ show:
 	@echo 'BIN_NAME    :' $(BIN_NAME)
 	@echo 'BIN_PATH    :' $(BIN_PATH)
 	@echo 'BUILD_PATH  :' $(BUILD_PATH)
+	@echo 'INCLUDES    :' $(INCLUDES)
 	@echo 'SRCDIRS     :' $(SRCDIRS)
 	@echo 'HEADERS     :' $(HEADERS)
 	@echo 'SOURCES     :' $(SOURCES)
@@ -503,10 +514,13 @@ endif
 # Kevin Zhou   2017-09-12  v0.3       修正include生成头文件依赖出错无法clean
 # Kevin Zhou   2018-02-19  v0.4       修正当BUILD_PATH非.时无法跟踪头文件变化
 # Kevin Zhou   2018-05-20  v0.5       增加链接可执行程序时的MAP文件生成
+# Kevin Zhou   2018-07-15  v0.6       优化头文件包含时的路径问题
 ###############################################################################
 # 其它引用参考：
 # 1.Linux下Makefile生成*.d依赖文件及gcc -M -MF -MP -MG等相关选项说明
 # http://blog.csdn.net/qq1452008/article/details/50855810
 # 2.make&&gcc/g++ 生成 map file
 # https://blog.csdn.net/dj0379/article/details/17011237
+# 3.解决C文件包含的头文件修改了，但C文件不重新编译的问题
+# https://blog.csdn.net/szullc/article/details/85038875
 ###############################################################################
