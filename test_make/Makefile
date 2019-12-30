@@ -158,14 +158,6 @@ ifeq ($(BIN_NAME),)
   endif
 endif
 
-# Rename target base on the type of library, if target is a library.
-ifeq ($(COM_TYPE),1)
-  BIN_NAME := $(addprefix lib, $(addsuffix .so, $(BIN_NAME)))
-endif
-ifeq ($(COM_TYPE),2)
-  BIN_NAME := $(addprefix lib, $(addsuffix .a,  $(BIN_NAME)))
-endif
-
 ifeq ($(BIN_PATH),)
   BIN_PATH   := .
 endif
@@ -229,12 +221,10 @@ LINK.c      = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS)
 LINK.cxx    = $(CXX) $(CXXFLAGS) $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS)
 
 ifneq ($(COM_TYPE),0)
-  COMPILE.c   += -fPIC
-  COMPILE.cxx += -fPIC
   ifneq ($(MAIN_FILE),)
     # filter out the file contain main function.
-    OBJECTS   := $(filter-out %/$(MAIN_FILE).o,$(OBJECTS))
-    DEPENDS   := $(OBJECTS:.o=.d)
+    OBJECTS := $(filter-out %/$(MAIN_FILE).o,$(OBJECTS))
+    DEPENDS := $(OBJECTS:.o=.d)
   endif
 endif
 
@@ -253,14 +243,18 @@ export BIN_PATH BUILD_PATH
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS MY_CFLAGS
 
 # compiler and linker flags when debug or release.
-release: export COMPILE.c   := $(COMPILE.c)
-release: export COMPILE.cxx := $(COMPILE.cxx)
-release: export LINK.c      := $(LINK.c)
-release: export LINK.cxx    := $(LINK.cxx)
-debug:   export COMPILE.c   := $(COMPILE.c)
-debug:   export COMPILE.cxx := $(COMPILE.cxx)
-debug:   export LINK.c      := $(LINK.c)
-debug:   export LINK.cxx    := $(LINK.cxx)
+staticlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).a
+sharedlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).so
+sharedlib: export COMPILE.c   += -fPIC
+sharedlib: export COMPILE.cxx += -fPIC
+release:   export COMPILE.c   := $(COMPILE.c)
+release:   export COMPILE.cxx := $(COMPILE.cxx)
+release:   export LINK.c      := $(LINK.c)
+release:   export LINK.cxx    := $(LINK.cxx)
+debug:     export COMPILE.c   := $(COMPILE.c)
+debug:     export COMPILE.cxx := $(COMPILE.cxx)
+debug:     export LINK.c      := $(LINK.c)
+debug:     export LINK.cxx    := $(LINK.cxx)
 
 # Create the directories used in the build.
 ifeq ($(shell if [ -d $(BUILD_PATH) ] && [ "."!=$(BUILD_PATH) ];then echo "true"; else echo "false"; fi),false)
