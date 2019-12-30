@@ -1,0 +1,14 @@
+#
+# Normal rules
+#
+*~
+
+#
+# temporary files during compiling phase
+#
+test_make/bin/
+test_make/build/
+test_make/demo
+test_make/*.d
+test_make/*.o
+test_make/.*
