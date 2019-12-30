@@ -17,33 +17,36 @@
 #              5.对本Makefile可用的目标及相关帮助信息可通过make help得到。
 # History    : 参见文件末尾
 #==============================================================================
-MK_VERSION  := 0.8
+MK_VERSION  := 0.9
 
 # 定制段，工程配置选项 START
 ###############################################################################
-# 编译类型，0: 可执行程序，1: 动态链接库，2: 静态链接库
-COM_TYPE     = 0
+# 编译类型，0: 可执行程序，1: 动态链接库，2: 静态链接库，3: 内核模块
+COM_TYPE     = 3
 
-# 编译链接库时，（通常需要）去除的包含main函数的源文件，在此指明文件，不含后缀
-MAIN_FILE    = main
+# 编译库或内核模块时，（通常需要）去除的包含main函数以及非模块所需源的文件，在此指明，不含后缀
+MAIN_FILE    = main hello
 
-# 最终目标，即可执行程序（或不含后缀的链接库）的名字
+# 最终目标，即可执行程序（或不含后缀的链接库或内核模块）的名字
 BIN_NAME     = demo
 
 # 存放工程源文件的目录路径（相对于本Makefile文件）。现仅支持当前路径不建议修改！
 SRC_PATH     = .
 
 # 在工程的顶层目录下创建的用于存放最终编译目录的的文件夹（为.或空则不创建）
-BIN_PATH     = bin
+BIN_PATH     = .
 
 # 在工程的顶层目录下创建的用于存放编译临时文件的目录（为.或空则不创建）
-BUILD_PATH   = build
+BUILD_PATH   = .
+
+# 指定Linux内核源码所在路径（用于编译在指定某个特定版本内核下运行的模块，为空则使用本机版本）
+KERNEL_PATH  = 
 
 # true: 查找当前路径下所有文件夹中的源文件, false: 仅当前文件夹
-INC_SUB_DIRS = false
+INC_SUB_DIRS = true
 
 # true: 嵌套调用子目录下的Makefile, false: 仅执行当前Makefile
-INC_SUB_MAKE = true
+INC_SUB_MAKE = false
 
 # make的默认编译工作的模式（debug或release）
 MAKE_MODE    = release
@@ -68,12 +71,12 @@ CXX       = g++
 INCLUDES  = -I$(SRC_PATH) -I./calc -I./utility
 
 # 额外的链接库路径（形式为：-L路径；以空格分割），指定寻找链接库文件的目录
-LIBPATHS  = -L./calc/bin -L./utility/bin
+LIBPATHS  = -L$(BIN_PATH)
 
 # 需要连接的库文件（形式为：-l具体某个链接库的名称，不带后缀；以空格分割）
 # 注：库需要以lib作为开头，而在指定链接命令行参数时，却无需包含开头和扩展名
 # 动态库（以.so为后缀），注意如果A依赖B，则B应当在A的右边
-DLIBRARIES= -pthread -lcalc
+DLIBRARIES= -lpthread -lcalc
 
 # 静态库（以.a为后缀），同上
 SLIBRARIES= -lutility
@@ -109,6 +112,17 @@ CTAGSFLAGS=
 
 # 固定段，make工作的主体描述（通常不需更改，但可自行扩展） START
 ###############################################################################
+ifeq ($(COM_TYPE),3)
+  ifeq ($(KERNEL_PATH),)
+   KERNEL_PATH := /lib/modules/$(shell uname -r)/build
+  endif
+  EXTRA_CFLAGS += $(CPPFLAGS) $(CFLAGS) $(OCFLAGS) -D KERNEL_MODULE
+#   $(BIN_NAME)-objs := module.o utility/utility.o calc/calc.o
+endif
+
+ifneq ($(KERNELRELEASE),)
+  obj-m := $(BIN_NAME).o
+else
 #==============================================================================
 # Shell used in this makefile(bash is used for 'echo -en')
 SHELL   = /bin/bash
@@ -251,8 +265,9 @@ LINK.cxx    = $(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OCFLAGS) $(INCLUDES) $(LDFLAGS)
 
 ifneq ($(COM_TYPE),0)
   ifneq ($(MAIN_FILE),)
-    # filter out the file contain main function.
-    OBJECTS := $(filter-out %/$(MAIN_FILE).o,$(OBJECTS))
+    # filter out the file contain main function and not part of module.
+    TMPFILS := $(foreach f, $(MAIN_FILE), %/$(f).o)
+    OBJECTS := $(filter-out $(TMPFILS), $(OBJECTS))
     DEPENDS := $(OBJECTS:.o=.d)
   endif
 endif
@@ -272,6 +287,8 @@ export BIN_PATH BUILD_PATH ROOT_PATH
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OCFLAGS
 
 # compiler and linker flags when debug or release.
+kernelmod: export $(BIN_NAME)-objs := $(OBJECTS)
+kernelmod: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).ko
 staticlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).a
 sharedlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).so
 sharedlib: export COMPILE.c   += -fPIC
@@ -321,7 +338,7 @@ endef
 
 define after_target_func
   @if [ $(CURR_PATH) != $(ROOT_PATH) ]; then \
-   mkdir -p $(dir $(ROOT_PATH)/$(TARGET));   \
+   mkdir -p $(dir $(ROOT_PATH)/$(TARGET));  \
    cp $(CURR_PATH)/$(TARGET) $(ROOT_PATH)/$(TARGET); fi
 endef
 
@@ -329,16 +346,20 @@ endef
 #---------------------------------------
 .PHONY: release
 release:
-	@echo "Beginning debug build "$(shell if [ "$(USE_VERSION)" = "true" ];then echo "v$(VERSION_STRING)"; fi)
+	@echo "Beginning release build "$(shell if [ "$(USE_VERSION)" = "true" ];then echo "v$(VERSION_STRING)"; fi)
 ifeq ($(INC_SUB_MAKE),true)
 	$(CPREFIX)$(gen_sub_target)
 endif
 ifneq  ($(COM_TYPE),0)
-  ifeq ($(COM_TYPE),1)
+ ifeq  ($(COM_TYPE),1)
 	@$(MAKE) sharedlib --no-print-directory
-  else
+ else
+  ifeq ($(COM_TYPE),2)
 	@$(MAKE) staticlib --no-print-directory
+  else
+	@$(MAKE) kernelmod --no-print-directory
   endif
+ endif
 else
 	$(CPREFIX)$(gen_all_target)
 endif
@@ -348,15 +369,16 @@ endif
 .PHONY: debug
 debug:
 	@echo "Beginning debug build "$(shell if [ "$(USE_VERSION)" = "true" ];then echo "v$(VERSION_STRING)"; fi)
-ifeq ($(INC_SUB_MAKE),true)
-	$(CPREFIX)$(gen_sub_target)
-endif
 ifneq  ($(COM_TYPE),0)
-  ifeq ($(COM_TYPE),1)
+ ifeq  ($(COM_TYPE),1)
 	@$(MAKE) sharedlib --no-print-directory
-  else
+ else
+  ifeq ($(COM_TYPE),2)
 	@$(MAKE) staticlib --no-print-directory
+  else
+	@$(MAKE) kernelmod --no-print-directory
   endif
+ endif
 else
 	$(CPREFIX)$(gen_all_target)
 endif
@@ -423,6 +445,17 @@ staticlib: objs
 	@$(START_TIME)
 	@echo "C and C++ static library" > /dev/null
 	$(CPREFIX)ar cr $(TARGET) $(OBJECTS)
+	@echo -en "\t Total time: "
+	@$(END_TIME)
+	$(CPREFIX)$(after_target_func)
+
+# make kernel module.
+#--------------------
+.PHONY: kernelmod
+kernelmod:
+	@echo "Make kernel module: $(TARGET)"
+	@$(START_TIME)
+	$(MAKE) -C $(KERNEL_PATH) M=$(ROOT_PATH) modules
 	@echo -en "\t Total time: "
 	@$(END_TIME)
 	$(CPREFIX)$(after_target_func)
@@ -541,13 +574,18 @@ clean: $(SUBDIRS)
 	$(CPREFIX)$(RM) $(TIME_FILE) .*_time
 	$(CPREFIX)$(RM) $(OBJECTS) $(DEPENDS)
 	$(CPREFIX)find . -type f -name "*.o" -o -name "*.d" | xargs rm -f
+ifeq ($(COM_TYPE),3)
+	$(CPREFIX)$(RM) -r .tmp_versions
+	$(CPREFIX)find . -type f -name ".t*" -o -name '.m*' -o -name "*.cmd" -o -name \
+	 "*.mod.c" -o -name "*.order" -o -name "*.symvers" -o -name ".cache.mk" | xargs rm -f
+endif
 
 # Removes all build files
 distclean: clean $(SUBDIRS)
 	@echo "Deleting tags files"
 	@$(RM) tags TAGS
 	@echo "Deleting $(BIN_NAME) or it's symlink"
-	@$(RM) $(BIN_NAME)
+	@$(RM) $(BIN_NAME) $(BIN_NAME).ko lib$(BIN_NAME).so lib$(BIN_NAME).a
 	@echo "Deleting build directories, if exist"
 ifneq ($(BUILD_PATH),.)
 	@$(RM) -r $(BUILD_PATH)
@@ -566,6 +604,7 @@ dbgMake:
 	@echo -e "TARGET: $@ Do nothing!\n"
 	@echo -e $(notdir $@) "\n"
 	@echo -e $(dir $@) "\n"
+	@echo -e $(KERNELRELEASE) "\n"
 	@echo -e "\$$(MAKECMDGOALS): $(MAKECMDGOALS)\n"
 	@echo -e "\$$(MAKEFILE_LIST): $(MAKEFILE_LIST)\n"
 	@echo -e "\$$(.DEFAULT_GOAL): $(.DEFAULT_GOAL)\n"
@@ -632,6 +671,7 @@ ifndef NODEPENDS
  endif
 endif
 #==============================================================================
+endif # end of ifneq ($(KERNELRELEASE),)
 # 固定段 END
 ## End of the Makefile ###  Suggestions are welcome  ### All rights reserved ##
 ###############################################################################
@@ -647,6 +687,7 @@ endif
 # Kevin Zhou   2018-07-15  v0.6       优化头文件包含时的路径问题
 # Kevin Zhou   2018-10-19  v0.7       增加编译动态或静态库，支持同时链接动态库和静态库
 # Kevin Zhou   2018-11-22  v0.8       增加嵌套调用子目录下的Makefile
+# Kevin Zhou   2018-12-21  v0.9       增加编译生成Linux内核模块
 ###############################################################################
 # 其它引用参考：
 # 1.Linux下Makefile生成*.d依赖文件及gcc -M -MF -MP -MG等相关选项说明
@@ -672,4 +713,6 @@ endif
 # https://www.cnblogs.com/Shirlies/p/4282182.html
 # 11.makefile专题：预定义变量的使用
 # https://blog.csdn.net/jacob__lei/article/details/79274145
+# 12.多目录多源文件的Linux内核模块的Makefile
+# https://blog.csdn.net/liuzq/article/details/89172426
 ###############################################################################
