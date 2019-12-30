@@ -21,7 +21,7 @@ MK_VERSION  := 0.7
 # 定制段，工程配置选项 START
 ###############################################################################
 # 编译类型，0: 可执行程序，1: 动态链接库，2: 静态链接库
-COM_TYPE     = 2
+COM_TYPE     = 0
 
 # 编译链接库时，（通常需要）去除的包含main函数的源文件，在此指明文件，不含后缀
 MAIN_FILE    = main
@@ -39,7 +39,7 @@ BIN_PATH     = bin
 BUILD_PATH   = build
 
 # true: 查找当前路径下所有文件夹中的源文件, false: 仅当前文件夹
-INC_SUB_DIRS = true
+INC_SUB_DIRS = false
 
 # make的默认编译工作的模式（debug或release）
 MAKE_MODE    = release
@@ -60,14 +60,19 @@ CXX       = g++
 # 去掉下行注释，可用C++编译器编译C程序
 # CC        = $(CXX)
 
-# 额外的预处理和编译选项
-MY_CFLAGS = -D WIN32
-
-# 需要链接的库文件
-MY_LIBS   =
-
 # 额外的头文件路径（形式为：-I路径；以空格分割），指定寻找头文件的目录
-INCLUDES  = -I$(SRC_PATH)
+INCLUDES  = -I$(SRC_PATH) -I./calc -I./utility
+
+# 额外的链接库路径（形式为：-L路径；以空格分割），指定寻找链接库文件的目录
+LIBPATHS  = -L./calc -L./utility
+
+# 需要连接的库文件（形式为：-l具体某个链接库的名称，不带后缀；以空格分割）
+# 注：库需要以lib作为开头，而在指定链接命令行参数时，却无需包含开头和扩展名
+# 动态库（以.so为后缀），注意如果A依赖B，则B应当在A的右边
+DLIBRARIES= -pthread -lcalc
+
+# 静态库（以.a为后缀），同上
+SLIBRARIES= -lutility
 
 # 编译预处理选项（cpp: compile pre-processor），使用man cpp获取相关信息
 CPPFLAGS  = -Wall
@@ -75,6 +80,9 @@ CPPFLAGS  = -Wall
 # 编译选项（通过命令行可覆写这些选项），使用man gcc或man g++获取相关信息
 CFLAGS    = -O1
 CXXFLAGS  = -O2
+
+# 其它额外的预处理和编译选项
+OCFLAGS   = -D _LINUX_
 
 # 链接选项，使用man ld获取相关信息
 LDFLAGS   =
@@ -167,18 +175,26 @@ endif
 
 TARGET = $(BIN_PATH)/$(BIN_NAME)
 
-# Append pkg-config specific libraries if need be
-ifneq ($(MY_LIBS),)
-  MY_CFLAGS += $(shell pkg-config --cflags $(MY_LIBS))
-  LDFLAGS   += $(shell pkg-config --libs   $(MY_LIBS))
+LIBRARIES = $(EMPTY)
+ifneq ($(SLIBRARIES),)
+  LIBRARIES += -Wl,-Bstatic  $(SLIBRARIES)
+endif
+ifneq ($(DLIBRARIES),)
+  LIBRARIES += -Wl,-Bdynamic $(DLIBRARIES)
+endif
+
+# Append pkg-config specific libraries if need be.
+ifneq ($(LIBRARIES),)
+#   OCFLAGS += $(shell pkg-config --cflags $(LIBRARIES))
+#   LDFLAGS += $(shell pkg-config --libs   $(LIBRARIES))
 endif
 
 ifneq ($(MAKE_MODE),release)
-  MY_CFLAGS += $(DCFLAGS)
-  LDFLAGS   += $(DLDFLAGS) -Wl,-Map,$(TARGET).map
+  OCFLAGS += $(DCFLAGS)
+  LDFLAGS += $(LIBPATHS) $(DLDFLAGS) -Wl,-Map,$(TARGET).map
 else
-  MY_CFLAGS += $(RCFLAGS)
-  LDFLAGS   += $(RLDFLAGS) -Wl,-Map,$(TARGET).map
+  OCFLAGS += $(RCFLAGS)
+  LDFLAGS += $(LIBPATHS) $(RLDFLAGS) -Wl,-Map,$(TARGET).map
 endif
 
 # Get the dirs that store source files.
@@ -213,12 +229,12 @@ DEPENDS = $(OBJECTS:.o=.d)
 
 DEP_OPT = $(shell if `$(CC) --version | grep $(CC) >/dev/null`; then \
                   echo "-MG -MM -MP"; else echo "-M"; fi )
-DEPEND      = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES) $(DEP_OPT)
+DEPEND      = $(CC)  $(CPPFLAGS) $(CFLAGS)   $(OCFLAGS) $(INCLUDES) $(DEP_OPT)
 DEPEND.d    = $(subst -g ,,$(DEPEND))
-COMPILE.c   = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES)
-COMPILE.cxx = $(CXX) $(CXXFLAGS) $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES)
-LINK.c      = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS)
-LINK.cxx    = $(CXX) $(CXXFLAGS) $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS)
+COMPILE.c   = $(CC)  $(CPPFLAGS) $(CFLAGS)   $(OCFLAGS) $(INCLUDES)
+COMPILE.cxx = $(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OCFLAGS) $(INCLUDES)
+LINK.c      = $(CC)  $(CPPFLAGS) $(CFLAGS)   $(OCFLAGS) $(INCLUDES) $(LDFLAGS)
+LINK.cxx    = $(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OCFLAGS) $(INCLUDES) $(LDFLAGS)
 
 ifneq ($(COM_TYPE),0)
   ifneq ($(MAIN_FILE),)
@@ -240,7 +256,7 @@ endif
 export BIN_PATH BUILD_PATH
 
 # Combine compiler and linker flags and variables
-export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS MY_CFLAGS
+export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OCFLAGS
 
 # compiler and linker flags when debug or release.
 staticlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).a
@@ -365,11 +381,8 @@ endif
 staticlib: objs
 	@echo "Make static library: $(TARGET)"
 	@$(START_TIME)
-ifeq ($(SRC_CXX),)              # C program
+	@echo "C and C++ static library" > /dev/null
 	$(CPREFIX)ar cr $(TARGET) $(OBJECTS)
-else                            # C++ program
-	$(CPREFIX)ar cr $(TARGET) $(OBJECTS)
-endif
 	@echo -en "\t Total time: "
 	@$(END_TIME)
 
@@ -517,6 +530,8 @@ show:
 	@echo 'BIN_PATH    :' $(BIN_PATH)
 	@echo 'BUILD_PATH  :' $(BUILD_PATH)
 	@echo 'INCLUDES    :' $(INCLUDES)
+	@echo 'LIBPATHS    :' $(LIBPATHS)
+	@echo 'LIBRARIES   :' $(LIBRARIES)
 	@echo 'SRCDIRS     :' $(SRCDIRS)
 	@echo 'HEADERS     :' $(HEADERS)
 	@echo 'SOURCES     :' $(SOURCES)
@@ -579,7 +594,7 @@ endif
 # Kevin Zhou   2018-02-19  v0.4       修正当BUILD_PATH非.时无法跟踪头文件变化
 # Kevin Zhou   2018-05-20  v0.5       增加链接可执行程序时的MAP文件生成
 # Kevin Zhou   2018-07-15  v0.6       优化头文件包含时的路径问题
-# Kevin Zhou   2018-08-09  v0.7       增加对编译生成动态库或静态库的支持
+# Kevin Zhou   2018-10-19  v0.7       增加编译动态或静态库，支持同时链接动态库和静态库
 ###############################################################################
 # 其它引用参考：
 # 1.Linux下Makefile生成*.d依赖文件及gcc -M -MF -MP -MG等相关选项说明
@@ -597,4 +612,8 @@ endif
 # 6.关于LIBRARY_PATH和LD_LIBRARY_PATH环境变量
 # http://blog.csdn.net/yasi_xi/article/details/8196011
 # http://blog.csdn.net/wishfly/article/details/52174901
+# 7.GCC中同时链接动态库和静态库(https://www.cnblogs.com/lidabo/p/6206504.html)
+# 8.折腾gcc/g++链接时.o文件及库的顺序问题
+# https://www.cnblogs.com/little-ant/p/3398885.html
+# 9.pkg-config详解(http://blog.csdn.net/newchenxf/article/details/51750239)
 ###############################################################################
