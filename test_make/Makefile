@@ -52,7 +52,7 @@ INSTALL_MODE = $(INSTALL) -m 644
 CC        = gcc
 CXX       = g++
 # 去掉下行注释，可用C++编译器编译C程序
-CC        = $(CXX)
+# CC        = $(CXX)
 
 # 额外的预处理和编译选项
 MY_CFLAGS = -D WIN32
@@ -186,6 +186,7 @@ endif
 # .c indicates C source files, and others C++ ones.
 SRCEXTS = .c .C .cc .cpp .CPP .c++ .cxx .cp
 HDREXTS = .h .H .hh .hpp .HPP .h++ .hxx .hp
+
 # Delete the default suffixes rules.
 .SUFFIXES:
 
@@ -412,6 +413,7 @@ ctags: $(HEADERS) $(SOURCES)
 # Removes all temp files
 clean:
 	@echo "Deleting temporary files"
+	$(CPREFIX)$(RM) $(TIME_FILE) .*_time
 	$(CPREFIX)$(RM) $(OBJECTS) $(DEPENDS)
 	$(CPREFIX)find . -type f -name "*.o" -o -name "*.d" | xargs rm -f
 
