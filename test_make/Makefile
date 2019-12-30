@@ -22,7 +22,7 @@ MK_VERSION  := 0.9
 # 定制段，工程配置选项 START
 ###############################################################################
 # 编译类型，0: 可执行程序，1: 动态链接库，2: 静态链接库，3: 内核模块
-COM_TYPE     = 3
+COM_TYPE     = 0
 
 # 编译库或内核模块时，（通常需要）去除的包含main函数以及非模块所需源的文件，在此指明，不含后缀
 MAIN_FILE    = main hello
@@ -67,6 +67,15 @@ CXX       = g++
 # 去掉下行注释，可用C++编译器编译C程序
 # CC        = $(CXX)
 
+# 当前主机的架构类型
+HOST_ARCH := $(shell uname -m)
+
+# 目标主机的架构类型
+ARCH      := arm64
+
+# 当HOST_ARCH != ARCH时，应当使用交叉编译，在此指定交叉编译前缀
+CROSS_COMPILE := aarch64-linux-gnu-
+
 # 额外的头文件路径（形式为：-I路径；以空格分割），指定寻找头文件的目录
 INCLUDES  = -I$(SRC_PATH) -I./calc -I./utility
 
@@ -76,10 +85,10 @@ LIBPATHS  = -L$(BIN_PATH)
 # 需要连接的库文件（形式为：-l具体某个链接库的名称，不带后缀；以空格分割）
 # 注：库需要以lib作为开头，而在指定链接命令行参数时，却无需包含开头和扩展名
 # 动态库（以.so为后缀），注意如果A依赖B，则B应当在A的右边
-DLIBRARIES= -lpthread -lcalc
+DLIBRARIES= -lpthread 
 
 # 静态库（以.a为后缀），同上
-SLIBRARIES= -lutility
+SLIBRARIES= 
 
 # 编译预处理选项（cpp: compile pre-processor），使用man cpp获取相关信息
 CPPFLAGS  = -Wall
@@ -112,12 +121,26 @@ CTAGSFLAGS=
 
 # 固定段，make工作的主体描述（通常不需更改，但可自行扩展） START
 ###############################################################################
+HOST_ARCH ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
+ARCH      ?= $(shell uname -m | sed -e s/arm.*/arm/ -e s/aarch64.*/arm64/)
+
+ifneq  ($(HOST_ARCH), arm)
+  ifeq ($(ARCH), arm)
+   CROSS_COMPILE ?= arm-linux-gnueabihf-
+ endif
+endif
+
+ifneq  ($(HOST_ARCH), arm64)
+  ifeq ($(ARCH), arm64)
+   CROSS_COMPILE ?= aarch64-linux-gnu-
+  endif
+endif
+
 ifeq ($(COM_TYPE),3)
   ifeq ($(KERNEL_PATH),)
    KERNEL_PATH := /lib/modules/$(shell uname -r)/build
   endif
   EXTRA_CFLAGS += $(CPPFLAGS) $(CFLAGS) $(OCFLAGS) -D KERNEL_MODULE
-#   $(BIN_NAME)-objs := module.o utility/utility.o calc/calc.o
 endif
 
 ifneq ($(KERNELRELEASE),)
@@ -132,6 +155,13 @@ SPACE   = $(EMPTY) $(EMPTY)
 # Default compiler if they are no define.
 CC     ?= gcc
 CXX    ?= g++
+
+ifneq ($(HOST_ARCH),$(ARCH))
+  CC   := $(CROSS_COMPILE)$(CC)
+  CXX  := $(CROSS_COMPILE)$(CXX)
+else
+  CROSS_COMPILE :=
+endif
 
 # Obtains the OS type, either 'Darwin' (OS X) or 'Linux'
 UNAME_S:= $(shell uname -s)
@@ -455,7 +485,7 @@ staticlib: objs
 kernelmod:
 	@echo "Make kernel module: $(TARGET)"
 	@$(START_TIME)
-	$(MAKE) -C $(KERNEL_PATH) M=$(ROOT_PATH) modules
+	$(MAKE) -C $(KERNEL_PATH) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=$(ROOT_PATH) modules
 	@echo -en "\t Total time: "
 	@$(END_TIME)
 	$(CPREFIX)$(after_target_func)
@@ -585,7 +615,7 @@ distclean: clean $(SUBDIRS)
 	@echo "Deleting tags files"
 	@$(RM) tags TAGS
 	@echo "Deleting $(BIN_NAME) or it's symlink"
-	@$(RM) $(BIN_NAME) $(BIN_NAME).ko lib$(BIN_NAME).so lib$(BIN_NAME).a
+	@$(RM) $(BIN_NAME) $(BIN_NAME).map $(BIN_NAME).ko lib$(BIN_NAME).so lib$(BIN_NAME).a
 	@echo "Deleting build directories, if exist"
 ifneq ($(BUILD_PATH),.)
 	@$(RM) -r $(BUILD_PATH)
@@ -610,6 +640,7 @@ dbgMake:
 	@echo -e "\$$(.DEFAULT_GOAL): $(.DEFAULT_GOAL)\n"
 	@echo -e "\$$(.LIBPATTERNS): $(.LIBPATTERNS)\n"
 	@echo -e "\$$(.VARIABLES): $(.VARIABLES)\n"
+	@make -p
 
 # Show variables (for debug use only.)
 show:
@@ -631,6 +662,9 @@ show:
 	@echo 'COMPILE.cxx :' $(COMPILE.cxx)
 	@echo 'LINK.c      :' $(LINK.c)
 	@echo 'LINK.cxx    :' $(LINK.cxx)
+	@echo 'HOST_ARCH   :' $(HOST_ARCH)
+	@echo 'ARCH        :' $(ARCH)
+	@echo 'CROSS_COMPILE:' $(CROSS_COMPILE)
 	
 # Show help.
 help:
@@ -687,7 +721,7 @@ endif # end of ifneq ($(KERNELRELEASE),)
 # Kevin Zhou   2018-07-15  v0.6       优化头文件包含时的路径问题
 # Kevin Zhou   2018-10-19  v0.7       增加编译动态或静态库，支持同时链接动态库和静态库
 # Kevin Zhou   2018-11-22  v0.8       增加嵌套调用子目录下的Makefile
-# Kevin Zhou   2018-12-21  v0.9       增加编译生成Linux内核模块
+# Kevin Zhou   2018-12-31  v0.9       增加编译生成Linux内核模块，增加交叉编译支持
 ###############################################################################
 # 其它引用参考：
 # 1.Linux下Makefile生成*.d依赖文件及gcc -M -MF -MP -MG等相关选项说明
