@@ -16,7 +16,7 @@
 #              4.对本Makefile可用的目标及相关帮助信息可通过make help得到。
 # History    : 参见文件末尾
 #==============================================================================
-MK_VERSION  := 0.3
+MK_VERSION  := 0.4
 
 # 定制段，工程配置选项 START
 ###############################################################################
@@ -236,7 +236,7 @@ endif
 # Define commands for creating dependency files
 define gen_deps
 	@$(MKBUILDDIRS)
-	@echo -n $(dir $<) > $@
+	@echo -n $(dir $@) > $@
 	@$(DEPEND.d)   $< >> $@
 endef
 
@@ -501,6 +501,7 @@ endif
 # Kevin Zhou   2015-01-27  v0.1       初始文件创建（满足基本编译需求，支持临时编译目录）
 # Kevin Zhou   2016-04-21  v0.2       格式调整对齐，错误修正，完善注释等
 # Kevin Zhou   2017-09-12  v0.3       修正include生成头文件依赖出错无法clean
+# Kevin Zhou   2018-02-19  v0.4       修正当BUILD_PATH非.时无法跟踪头文件变化
 ###############################################################################
 # 其它引用参考：
 # 1.Linux下Makefile生成*.d依赖文件及gcc -M -MF -MP -MG等相关选项说明

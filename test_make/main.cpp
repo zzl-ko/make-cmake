@@ -37,6 +37,7 @@ int main()
 	char str[6] = "";
 	my_itoa(num, str);
 	cout<<"num["<<num<<"] -> str["<<str<<"]"<<endl;
+	cout<<"include header's micro is " << TEST_HEADER_INCLUDE <<endl;
 	
 	return 0;
 }

@@ -11,4 +11,6 @@ void hello()
 	CHello hi;
 
 	hi.say_hello();
+
+	cout << "TEST_HEADER_INCLUDE: " << TEST_HEADER_INCLUDE << endl;
 }

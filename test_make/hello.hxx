@@ -1,6 +1,7 @@
 #ifndef HELLO_H
 #define HELLO_H
 
+#include "module.h"
 #include <iostream>
 using namespace std;
 
