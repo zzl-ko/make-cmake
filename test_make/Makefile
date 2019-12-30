@@ -16,7 +16,7 @@
 #              4.对本Makefile可用的目标及相关帮助信息可通过make help得到。
 # History    : 参见文件末尾
 #==============================================================================
-MK_VERSION  := 0.4
+MK_VERSION  := 0.5
 
 # 定制段，工程配置选项 START
 ###############################################################################
@@ -169,10 +169,10 @@ endif
 
 ifneq ($(MAKE_MODE),release)
   MY_CFLAGS += $(DCFLAGS)
-  LDFLAGS   += $(DLDFLAGS)
+  LDFLAGS   += $(DLDFLAGS) -Wl,-Map,$(TARGET).map
 else
   MY_CFLAGS += $(RCFLAGS)
-  LDFLAGS   += $(RLDFLAGS)
+  LDFLAGS   += $(RLDFLAGS) -Wl,-Map,$(TARGET).map
 endif
 
 # Get the dirs that store source files.
@@ -502,8 +502,11 @@ endif
 # Kevin Zhou   2016-04-21  v0.2       格式调整对齐，错误修正，完善注释等
 # Kevin Zhou   2017-09-12  v0.3       修正include生成头文件依赖出错无法clean
 # Kevin Zhou   2018-02-19  v0.4       修正当BUILD_PATH非.时无法跟踪头文件变化
+# Kevin Zhou   2018-05-20  v0.5       增加链接可执行程序时的MAP文件生成
 ###############################################################################
 # 其它引用参考：
 # 1.Linux下Makefile生成*.d依赖文件及gcc -M -MF -MP -MG等相关选项说明
 # http://blog.csdn.net/qq1452008/article/details/50855810
+# 2.make&&gcc/g++ 生成 map file
+# https://blog.csdn.net/dj0379/article/details/17011237
 ###############################################################################
