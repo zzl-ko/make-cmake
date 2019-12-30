@@ -16,7 +16,7 @@
 #              4.对本Makefile可用的目标及相关帮助信息可通过make help得到。
 # History    : 参见文件末尾
 #==============================================================================
-MK_VERSION  := 0.2
+MK_VERSION  := 0.3
 
 # 定制段，工程配置选项 START
 ###############################################################################
@@ -186,7 +186,6 @@ endif
 # .c indicates C source files, and others C++ ones.
 SRCEXTS = .c .C .cc .cpp .CPP .c++ .cxx .cp
 HDREXTS = .h .H .hh .hpp .HPP .h++ .hxx .hp
-
 # Delete the default suffixes rules.
 .SUFFIXES:
 
@@ -196,8 +195,8 @@ SRC_CXX = $(filter-out %.c,$(SOURCES))
 OBJECTS = $(addprefix $(BUILD_PATH),$(patsubst ./%,/%,$(addsuffix .o,$(basename $(SOURCES)))))
 DEPENDS = $(OBJECTS:.o=.d)
 
-DEP_OPT = $(shell if `$(CC) --version | grep "GCC" >/dev/null`; then \
-                  echo "-MM -MP"; else echo "-M"; fi )
+DEP_OPT = $(shell if `$(CC) --version | grep $(CC) >/dev/null`; then \
+                  echo "-MG -MM -MP"; else echo "-M"; fi )
 DEPEND      = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(DEP_OPT)
 DEPEND.d    = $(subst -g ,,$(DEPEND))
 COMPILE.c   = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES)
@@ -501,4 +500,9 @@ endif
 #------------------------------------------------------------------------------
 # Kevin Zhou   2015-01-27  v0.1       初始文件创建（满足基本编译需求，支持临时编译目录）
 # Kevin Zhou   2016-04-21  v0.2       格式调整对齐，错误修正，完善注释等
+# Kevin Zhou   2017-09-12  v0.3       修正include生成头文件依赖出错无法clean
+###############################################################################
+# 其它引用参考：
+# 1.Linux下Makefile生成*.d依赖文件及gcc -M -MF -MP -MG等相关选项说明
+# http://blog.csdn.net/qq1452008/article/details/50855810
 ###############################################################################
