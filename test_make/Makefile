@@ -17,12 +17,12 @@
 #              5.对本Makefile可用的目标及相关帮助信息可通过make help得到。
 # History    : 参见文件末尾
 #==============================================================================
-MK_VERSION  := 0.9
+MK_VERSION  := 1.0
 
 # 定制段，工程配置选项 START
 ###############################################################################
 # 编译类型，0: 可执行程序，1: 动态链接库，2: 静态链接库，3: 内核模块
-COM_TYPE     = 0
+COM_TYPE     = 3
 
 # 编译库或内核模块时，（通常需要）去除的包含main函数以及非模块所需源的文件，在此指明，不含后缀
 MAIN_FILE    = main hello
@@ -34,10 +34,10 @@ BIN_NAME     = demo
 SRC_PATH     = .
 
 # 在工程的顶层目录下创建的用于存放最终编译目录的的文件夹（为.或空则不创建）
-BIN_PATH     = .
+BIN_PATH     = bin
 
 # 在工程的顶层目录下创建的用于存放编译临时文件的目录（为.或空则不创建）
-BUILD_PATH   = .
+BUILD_PATH   = build
 
 # 指定Linux内核源码所在路径（用于编译在指定某个特定版本内核下运行的模块，为空则使用本机版本）
 KERNEL_PATH  = 
@@ -71,7 +71,7 @@ CXX       = g++
 HOST_ARCH := $(shell uname -m)
 
 # 目标主机的架构类型
-ARCH      := arm64
+ARCH      := $(shell uname -m)
 
 # 当HOST_ARCH != ARCH时，应当使用交叉编译，在此指定交叉编译前缀
 CROSS_COMPILE := aarch64-linux-gnu-
@@ -129,36 +129,29 @@ ifneq  ($(HOST_ARCH), arm)
    CROSS_COMPILE ?= arm-linux-gnueabihf-
  endif
 endif
-
 ifneq  ($(HOST_ARCH), arm64)
   ifeq ($(ARCH), arm64)
    CROSS_COMPILE ?= aarch64-linux-gnu-
   endif
 endif
 
-ifeq ($(COM_TYPE),3)
-  ifeq ($(KERNEL_PATH),)
-   KERNEL_PATH := /lib/modules/$(shell uname -r)/build
-  endif
-  EXTRA_CFLAGS += $(CPPFLAGS) $(CFLAGS) $(OCFLAGS) -D KERNEL_MODULE
-endif
-
+EXTRA_CFLAGS += $(CPPFLAGS) $(CFLAGS) $(OCFLAGS) -D KERNEL_MODULE
 ifneq ($(KERNELRELEASE),)
   obj-m := $(BIN_NAME).o
 else
 #==============================================================================
 # Shell used in this makefile(bash is used for 'echo -en')
-SHELL   = /bin/bash
-EMPTY   =
-SPACE   = $(EMPTY) $(EMPTY)
+SHELL  = /bin/bash
+EMPTY  =
+SPACE  = $(EMPTY) $(EMPTY)
 
 # Default compiler if they are no define.
-CC     ?= gcc
-CXX    ?= g++
+CC    ?= gcc
+CXX   ?= g++
 
 ifneq ($(HOST_ARCH),$(ARCH))
-  CC   := $(CROSS_COMPILE)$(CC)
-  CXX  := $(CROSS_COMPILE)$(CXX)
+  CC  := $(CROSS_COMPILE)$(CC)
+  CXX := $(CROSS_COMPILE)$(CXX)
 else
   CROSS_COMPILE :=
 endif
@@ -219,6 +212,8 @@ ifeq ($(BIN_PATH),)
 endif
 ifeq ($(BUILD_PATH),)
   BUILD_PATH := .
+else
+  BUILD_PATH := $(shell if [ $(COM_TYPE) -eq 3 ];then echo ".";else echo "$(BUILD_PATH)";fi)
 endif
 
 TARGET = $(shell if [ "$(BIN_PATH)" != "." ];then echo "$(BIN_PATH)/"; fi)$(BIN_NAME)
@@ -237,13 +232,7 @@ ifneq ($(LIBRARIES),)
 #   LDFLAGS += $(shell pkg-config --libs   $(LIBRARIES))
 endif
 
-ifneq ($(MAKE_MODE),release)
-  OCFLAGS += $(DCFLAGS)
-  LDFLAGS += $(LIBPATHS) $(DLDFLAGS) -Wl,-Map,$(TARGET).map
-else
-  OCFLAGS += $(RCFLAGS)
-  LDFLAGS += $(LIBPATHS) $(RLDFLAGS) -Wl,-Map,$(TARGET).map
-endif
+LDFLAGS += $(LIBPATHS) -Wl,-Map,$(TARGET).map
 
 # Get the dirs that store source files.
 ifeq ($(INC_SUB_DIRS),true)
@@ -266,8 +255,7 @@ endif
 # Auto assign headers abspath of curr project for compiler.
 ifdef INCLUDES
   CURR_PATH = $(shell pwd)
-  CURR_DIRS = $(shell find . \( -path ./$(BIN_PATH) -o -path ./$(BUILD_PATH) \) \
-                            -prune -o -type d ! -name "." -print )
+  CURR_DIRS = $(shell find . \( -path ./$(BIN_PATH) -o -path ./$(BUILD_PATH) \) -prune -o -type d ! -name "." -print )
   INCLUDES += $(subst ./, -I$(CURR_PATH)/, $(CURR_DIRS))
 endif
 
@@ -293,14 +281,13 @@ COMPILE.cxx = $(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OCFLAGS) $(INCLUDES)
 LINK.c      = $(CC)  $(CPPFLAGS) $(CFLAGS)   $(OCFLAGS) $(INCLUDES) $(LDFLAGS)
 LINK.cxx    = $(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OCFLAGS) $(INCLUDES) $(LDFLAGS)
 
-ifneq ($(COM_TYPE),0)
-  ifneq ($(MAIN_FILE),)
-    # filter out the file contain main function and not part of module.
-    TMPFILS := $(foreach f, $(MAIN_FILE), %/$(f).o)
-    OBJECTS := $(filter-out $(TMPFILS), $(OBJECTS))
-    DEPENDS := $(OBJECTS:.o=.d)
-  endif
-endif
+TMP_FILES  := $(foreach f, $(MAIN_FILE), %/$(f).o)
+TMP_FILES  := $(filter-out $(TMP_FILES), $(OBJECTS))
+TMP_FILES  := $(patsubst $(BUILD_PATH)/%, %, $(TMP_FILES))
+
+kernelmod: OBJECTS := $(TMP_FILES)
+kernelmod: DEPENDS := $(TMP_FILES:.o=.d)
+kernelmod: KERNEL_PATH := $(shell if [ -z $(KERNEL_PATH) ];then echo "/lib/modules/$(shell uname -r)/build";else echo $(KERNEL_PATH);fi)
 
 # Verbose option, to output compile and link commands
 export Verbose := false
@@ -323,14 +310,14 @@ staticlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).a
 sharedlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).so
 sharedlib: export COMPILE.c   += -fPIC
 sharedlib: export COMPILE.cxx += -fPIC
-release:   export COMPILE.c   := $(COMPILE.c)
-release:   export COMPILE.cxx := $(COMPILE.cxx)
-release:   export LINK.c      := $(LINK.c)
-release:   export LINK.cxx    := $(LINK.cxx)
-debug:     export COMPILE.c   := $(COMPILE.c)
-debug:     export COMPILE.cxx := $(COMPILE.cxx)
-debug:     export LINK.c      := $(LINK.c)
-debug:     export LINK.cxx    := $(LINK.cxx)
+release:   export COMPILE.c   += $(RCFLAGS)
+release:   export COMPILE.cxx += $(RCFLAGS)
+release:   export LINK.c      += $(RLDFLAGS)
+release:   export LINK.cxx    += $(RLDFLAGS)
+debug:     export COMPILE.c   += $(DCFLAGS)
+debug:     export COMPILE.cxx += $(DCFLAGS)
+debug:     export LINK.c      += $(DLDFLAGS)
+debug:     export LINK.cxx    += $(DLDFLAGS)
 
 # Create the directories used in the build.
 ifeq ($(shell if [ -d $(BUILD_PATH) ] && [ "."!=$(BUILD_PATH) ];then echo "true"; else echo "false"; fi),false)
@@ -368,15 +355,26 @@ endef
 
 define after_target_func
   @if [ $(CURR_PATH) != $(ROOT_PATH) ]; then \
-   mkdir -p $(dir $(ROOT_PATH)/$(TARGET));  \
+   mkdir -p $(dir $(ROOT_PATH)/$(TARGET));   \
    cp $(CURR_PATH)/$(TARGET) $(ROOT_PATH)/$(TARGET); fi
 endef
 
+# There are three main compilation modes.
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.PHONY: release debug default submake
+
 # Standard, non-optimized release build.
 #---------------------------------------
-.PHONY: release
-release:
-	@echo "Beginning release build "$(shell if [ "$(USE_VERSION)" = "true" ];then echo "v$(VERSION_STRING)"; fi)
+release: default
+	@echo "Release build successful!"
+
+# Debug build for gdb debugging.
+#-------------------------------
+debug: default
+	@echo "Debug build successful!"
+
+default:
+	@echo "Beginning build "$(shell if [ "$(USE_VERSION)" = "true" ];then echo "v$(VERSION_STRING)"; fi)
 ifeq ($(INC_SUB_MAKE),true)
 	$(CPREFIX)$(gen_sub_target)
 endif
@@ -394,28 +392,8 @@ else
 	$(CPREFIX)$(gen_all_target)
 endif
 
-# Debug build for gdb debugging.
-#-------------------------------
-.PHONY: debug
-debug:
-	@echo "Beginning debug build "$(shell if [ "$(USE_VERSION)" = "true" ];then echo "v$(VERSION_STRING)"; fi)
-ifneq  ($(COM_TYPE),0)
- ifeq  ($(COM_TYPE),1)
-	@$(MAKE) sharedlib --no-print-directory
- else
-  ifeq ($(COM_TYPE),2)
-	@$(MAKE) staticlib --no-print-directory
-  else
-	@$(MAKE) kernelmod --no-print-directory
-  endif
- endif
-else
-	$(CPREFIX)$(gen_all_target)
-endif
-
 # call sub dir's makefile.
 #-------------------------
-.PHONY: submake
 submake: $(SUBDIRS)
 $(SUBDIRS): FORCE
 ifeq ($(INC_SUB_MAKE),true)
@@ -423,15 +401,27 @@ ifeq ($(INC_SUB_MAKE),true)
   ifneq ($(MAKECMDGOALS),submake)
 	@$(MAKE) -C $@ $(MAKECMDGOALS)
   else
-	@$(MAKE) -C $@
+	@$(MAKE) -C $@ --no-print-directory
   endif
 	@echo "Exiting  directory: <--- $@"
 endif
 
-# Main rule, checks the executable and symlinks to the output.
-#-------------------------------------------------------------
-.PHONY: all
-all: $(TARGET)
+# Main rule, make app .so .a or .ko etc.
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.PHONY: all sharedlib staticlib kernelmod
+
+# Rules for link and generating the executable.
+#----------------------------------------------
+all: objs
+	@echo "Linking: $@"
+	@$(START_TIME)
+ifeq ($(SRC_CXX),)              # C program
+	$(CPREFIX)$(LINK.c)   $(OBJECTS) $(LIBRARIES) -o $(TARGET)
+else                            # C++ program
+	$(CPREFIX)$(LINK.cxx) $(OBJECTS) $(LIBRARIES) -o $(TARGET)
+endif
+	@echo -en "\t Link time: "
+	@$(END_TIME)
 ifneq ($(BIN_PATH),.)
 	@echo "Making symlink: $(BIN_NAME) -> $(TARGET)"
 	@$(RM) $(BIN_NAME)
@@ -439,22 +429,8 @@ ifneq ($(BIN_PATH),.)
 endif
 	$(CPREFIX)$(after_target_func)
 
-# Rules for link and generating the executable.
-#----------------------------------------------
-$(TARGET): objs
-	@echo "Linking: $@"
-	@$(START_TIME)
-ifeq ($(SRC_CXX),)              # C program
-	$(CPREFIX)$(LINK.c)   $(OBJECTS) $(LIBRARIES) -o $@
-else                            # C++ program
-	$(CPREFIX)$(LINK.cxx) $(OBJECTS) $(LIBRARIES) -o $@
-endif
-	@echo -en "\t Link time: "
-	@$(END_TIME)
-
 # make shared library.
 #---------------------
-.PHONY: sharedlib
 sharedlib: objs
 	@echo "Make shared library: $(TARGET)"
 	@$(START_TIME)
@@ -469,7 +445,6 @@ endif
 
 # make static library.
 #---------------------
-.PHONY: staticlib
 staticlib: objs
 	@echo "Make static library: $(TARGET)"
 	@$(START_TIME)
@@ -481,7 +456,6 @@ staticlib: objs
 
 # make kernel module.
 #--------------------
-.PHONY: kernelmod
 kernelmod:
 	@echo "Make kernel module: $(TARGET)"
 	@$(START_TIME)
@@ -490,9 +464,16 @@ kernelmod:
 	@$(END_TIME)
 	$(CPREFIX)$(after_target_func)
 
+# Detailed rules that objs dirs deps.
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.PHONY: objs dirs deps
+
+# Rules for generating object files (.o).
+#----------------------------------------
+objs: dirs deps $(OBJECTS)
+
 # Create the directories used in the build.
 #------------------------------------------
-.PHONY: dirs
 dirs:
 ifeq ($(shell if [ -d $(BUILD_PATH) ] && [ -d $(BIN_PATH) ];then echo "true"; else echo "false"; fi),false)
 	@echo "Creating directories"
@@ -503,11 +484,6 @@ endif
 ifneq ($(BIN_PATH),.)
 	@mkdir -p $(BIN_PATH)
 endif
-
-# Rules for generating object files (.o).
-#----------------------------------------
-.PHONY: objs
-objs: dirs deps $(OBJECTS)
 
 $(BUILD_PATH)/%.o:$(SRC_PATH)/%.c
 	@echo "Compiling: $< -> $@"
@@ -539,7 +515,6 @@ $(BUILD_PATH)/%.o:$(SRC_PATH)/%.cxx
 	
 # Rules for creating dependency files (.d).
 #------------------------------------------
-.PHONY: deps
 deps: $(DEPENDS)
 
 $(BUILD_PATH)/%.d:$(SRC_PATH)/%.c
@@ -566,8 +541,42 @@ $(BUILD_PATH)/%.d:$(SRC_PATH)/%.c++
 $(BUILD_PATH)/%.d:$(SRC_PATH)/%.cxx
 	$(CPREFIX)$(gen_deps)
 	
-# other useful phony targets
-.PHONY: clean distclean install uninstall show help
+# other useful phony targets.
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.PHONY: clean distclean install uninstall show help FORCE
+
+# Rules for generating the tags
+etags: $(HEADERS) $(SOURCES)
+	$(ETAGS) $(ETAGSFLAGS) $(HEADERS) $(SOURCES)
+
+ctags: $(HEADERS) $(SOURCES)
+	$(CTAGS) $(CTAGSFLAGS) $(HEADERS) $(SOURCES)
+
+# Removes all temp files
+clean: $(SUBDIRS)
+	@echo "Deleting temporary files"
+	$(CPREFIX)$(RM) $(TIME_FILE) .*_time
+	$(CPREFIX)$(RM) $(OBJECTS) $(DEPENDS)
+	$(CPREFIX)find . -type f -name "*.o" -o -name "*.d" | xargs rm -f
+	$(CPREFIX)$(RM) -r .tmp_versions
+	$(CPREFIX)find . -type f -name ".t*" -o -name '.m*' -o -name "*.cmd" -o -name \
+	 "*.mod.c" -o -name "*.order" -o -name "*.symvers" -o -name ".cache.mk" | xargs rm -f
+
+# Removes all build files
+distclean: clean $(SUBDIRS)
+	@echo "Deleting tags files"
+	@$(RM) tags TAGS
+	@echo "Deleting $(BIN_NAME) or it's symlink"
+	@$(RM) $(BIN_NAME) $(BIN_NAME).map $(BIN_NAME).ko lib$(BIN_NAME).so lib$(BIN_NAME).a
+	@echo "Deleting build directories, if exist"
+ifneq ($(BUILD_PATH),.)
+	@$(RM) -r $(BUILD_PATH)
+	@$(RM) -r $(BLDDIRS)
+endif
+ifneq ($(BIN_PATH),.)
+	@$(RM) -r $(BIN_PATH)
+	@$(RM) -r $(BINDIRS)
+endif
 
 # Installs the program
 install:
@@ -590,41 +599,6 @@ endif
 check: ; @echo "check: do nothing"
 
 test: ; @echo "test: do nothing"
-
-# Rules for generating the tags
-etags: $(HEADERS) $(SOURCES)
-	$(ETAGS) $(ETAGSFLAGS) $(HEADERS) $(SOURCES)
-
-ctags: $(HEADERS) $(SOURCES)
-	$(CTAGS) $(CTAGSFLAGS) $(HEADERS) $(SOURCES)
-
-# Removes all temp files
-clean: $(SUBDIRS)
-	@echo "Deleting temporary files"
-	$(CPREFIX)$(RM) $(TIME_FILE) .*_time
-	$(CPREFIX)$(RM) $(OBJECTS) $(DEPENDS)
-	$(CPREFIX)find . -type f -name "*.o" -o -name "*.d" | xargs rm -f
-ifeq ($(COM_TYPE),3)
-	$(CPREFIX)$(RM) -r .tmp_versions
-	$(CPREFIX)find . -type f -name ".t*" -o -name '.m*' -o -name "*.cmd" -o -name \
-	 "*.mod.c" -o -name "*.order" -o -name "*.symvers" -o -name ".cache.mk" | xargs rm -f
-endif
-
-# Removes all build files
-distclean: clean $(SUBDIRS)
-	@echo "Deleting tags files"
-	@$(RM) tags TAGS
-	@echo "Deleting $(BIN_NAME) or it's symlink"
-	@$(RM) $(BIN_NAME) $(BIN_NAME).map $(BIN_NAME).ko lib$(BIN_NAME).so lib$(BIN_NAME).a
-	@echo "Deleting build directories, if exist"
-ifneq ($(BUILD_PATH),.)
-	@$(RM) -r $(BUILD_PATH)
-	@$(RM) -r $(BLDDIRS)
-endif
-ifneq ($(BIN_PATH),.)
-	@$(RM) -r $(BIN_PATH)
-	@$(RM) -r $(BINDIRS)
-endif
 
 # Function used to check variables, Use on the command line: make print-VARNAME
 print-%: ; @echo $*=$($*)
@@ -695,7 +669,6 @@ help:
 	@echo
 	@echo 'Report bugs to <zko221986 AT hotmail DOT com>.'
 
-.PHONY: FORCE
 FORCE:
 
 # Include dependency files, if they exist.
@@ -722,6 +695,7 @@ endif # end of ifneq ($(KERNELRELEASE),)
 # Kevin Zhou   2018-10-19  v0.7       增加编译动态或静态库，支持同时链接动态库和静态库
 # Kevin Zhou   2018-11-22  v0.8       增加嵌套调用子目录下的Makefile
 # Kevin Zhou   2018-12-31  v0.9       增加编译生成Linux内核模块，增加交叉编译支持
+# Kevin Zhou   2019-06-18  v1.0       编译模式功能优化，重复功能代码合并
 ###############################################################################
 # 其它引用参考：
 # 1.Linux下Makefile生成*.d依赖文件及gcc -M -MF -MP -MG等相关选项说明
