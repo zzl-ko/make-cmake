@@ -16,11 +16,17 @@
 #              4.对本Makefile可用的目标及相关帮助信息可通过make help得到。
 # History    : 参见文件末尾
 #==============================================================================
-MK_VERSION  := 0.6
+MK_VERSION  := 0.7
 
 # 定制段，工程配置选项 START
 ###############################################################################
-# 最终目标，即可执行程序的名字
+# 编译类型，0: 可执行程序，1: 动态链接库，2: 静态链接库
+COM_TYPE     = 2
+
+# 编译链接库时，（通常需要）去除的包含main函数的源文件，在此指明文件，不含后缀
+MAIN_FILE    = main
+
+# 最终目标，即可执行程序（或不含后缀的链接库）的名字
 BIN_NAME     = demo
 
 # 存放工程源文件的目录路径（相对于本Makefile文件）。现仅支持当前路径不建议修改！
@@ -148,8 +154,16 @@ ifeq ($(BIN_NAME),)
   CUR_PATH = $(subst /,$(SPACE),$(subst $(SPACE),_,$(CURDIR)))
   BIN_NAME = $(word $(words $(CUR_PATH)),$(CUR_PATH))
   ifeq ($(BIN_NAME),)
-    BIN_NAME = a.out
+    BIN_NAME = demo
   endif
+endif
+
+# Rename target base on the type of library, if target is a library.
+ifeq ($(COM_TYPE),1)
+  BIN_NAME := $(addprefix lib, $(addsuffix .so, $(BIN_NAME)))
+endif
+ifeq ($(COM_TYPE),2)
+  BIN_NAME := $(addprefix lib, $(addsuffix .a,  $(BIN_NAME)))
 endif
 
 ifeq ($(BIN_PATH),)
@@ -214,6 +228,16 @@ COMPILE.cxx = $(CXX) $(CXXFLAGS) $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES)
 LINK.c      = $(CC)  $(CFLAGS)   $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS)
 LINK.cxx    = $(CXX) $(CXXFLAGS) $(MY_CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS)
 
+ifneq ($(COM_TYPE),0)
+  COMPILE.c   += -fPIC
+  COMPILE.cxx += -fPIC
+  ifneq ($(MAIN_FILE),)
+    # filter out the file contain main function.
+    OBJECTS   := $(filter-out %/$(MAIN_FILE).o,$(OBJECTS))
+    DEPENDS   := $(OBJECTS:.o=.d)
+  endif
+endif
+
 # Verbose option, to output compile and link commands
 export Verbose := false
 ifeq ($(Verbose),true)
@@ -267,11 +291,19 @@ ifeq ($(USE_VERSION),true)
 else
 	@echo "Beginning release build"
 endif
+ifneq ($(COM_TYPE),0)
+ ifeq ($(COM_TYPE),1)
+	@$(MAKE) sharedlib --no-print-directory
+ else
+	@$(MAKE) staticlib --no-print-directory
+ endif
+else
 	@$(START_TIME)
 	@$(MAKE) all --no-print-directory
 	@echo -n "Total build time: "
 	@$(END_TIME)
 	@echo Type ./$(BIN_NAME) to execute the program.
+endif
 
 # Debug build for gdb debugging.
 #-------------------------------
@@ -282,21 +314,70 @@ ifeq ($(USE_VERSION),true)
 else
 	@echo "Beginning debug build"
 endif
+ifneq ($(COM_TYPE),0)
+ ifeq ($(COM_TYPE),1)
+	@$(MAKE) sharedlib --no-print-directory
+ else
+	@$(MAKE) staticlib --no-print-directory
+ endif
+else
 	@$(START_TIME)
 	@$(MAKE) all --no-print-directory
 	@echo -n "Total build time: "
 	@$(END_TIME)
 	@echo Type ./$(BIN_NAME) to execute the program.
+endif
 
 # Main rule, checks the executable and symlinks to the output.
 #-------------------------------------------------------------
 .PHONY: all
-all: dirs $(TARGET)
+all: $(TARGET)
 ifneq ($(BIN_PATH),.)
 	@echo "Making symlink: $(BIN_NAME) -> $(TARGET)"
 	@$(RM) $(BIN_NAME)
 	@ln -s $(TARGET) $(BIN_NAME)
 endif
+
+# Rules for link and generating the executable.
+#----------------------------------------------
+$(TARGET): objs
+	@echo "Linking: $@"
+	@$(START_TIME)
+ifeq ($(SRC_CXX),)              # C program
+	$(CPREFIX)$(LINK.c)   $(OBJECTS) $(LIBRARIES) -o $@
+else                            # C++ program
+	$(CPREFIX)$(LINK.cxx) $(OBJECTS) $(LIBRARIES) -o $@
+endif
+	@echo -en "\t Link time: "
+	@$(END_TIME)
+
+# make shared library.
+#---------------------
+.PHONY: sharedlib
+sharedlib: objs
+	@echo "Make shared library: $(TARGET)"
+	@$(START_TIME)
+ifeq ($(SRC_CXX),)              # C program
+	$(CPREFIX)$(COMPILE.c)   $(OBJECTS) -shared -o $(TARGET)
+else                            # C++ program
+	$(CPREFIX)$(COMPILE.cxx) $(OBJECTS) -shared -o $(TARGET)
+endif
+	@echo -en "\t Total time: "
+	@$(END_TIME)
+
+# make static library.
+#---------------------
+.PHONY: staticlib
+staticlib: objs
+	@echo "Make static library: $(TARGET)"
+	@$(START_TIME)
+ifeq ($(SRC_CXX),)              # C program
+	$(CPREFIX)ar cr $(TARGET) $(OBJECTS)
+else                            # C++ program
+	$(CPREFIX)ar cr $(TARGET) $(OBJECTS)
+endif
+	@echo -en "\t Total time: "
+	@$(END_TIME)
 
 # Create the directories used in the build.
 #------------------------------------------
@@ -312,23 +393,10 @@ ifneq ($(BIN_PATH),.)
 	@mkdir -p $(BIN_PATH)
 endif
 
-# Rules for link and generating the executable.
-#----------------------------------------------
-$(TARGET): objs
-	@echo "Linking: $@"
-	@$(START_TIME)
-ifeq ($(SRC_CXX),)              # C program
-	$(CPREFIX)$(LINK.c)   $(OBJECTS) $(MY_LIBS) -o $@
-else                            # C++ program
-	$(CPREFIX)$(LINK.cxx) $(OBJECTS) $(MY_LIBS) -o $@
-endif
-	@echo -en "\t Link time: "
-	@$(END_TIME)
-	
 # Rules for generating object files (.o).
 #----------------------------------------
 .PHONY: objs
-objs: deps $(OBJECTS)
+objs: dirs deps $(OBJECTS)
 
 $(BUILD_PATH)/%.o:$(SRC_PATH)/%.c
 	@echo "Compiling: $< -> $@"
@@ -431,7 +499,7 @@ distclean: clean
 	@echo "Deleting tags files"
 	@$(RM) tags TAGS
 	@echo "Deleting $(BIN_NAME) or it's symlink"
-	@$(RM) $(BIN_NAME)
+	@$(RM) $(BIN_NAME)*
 	@echo "Deleting build directories, if exist"
 ifneq ($(BUILD_PATH),.)
 	@$(RM) -r $(BUILD_PATH)
@@ -482,6 +550,8 @@ help:
 	@echo '  deps      :generate dependency files (do nothing).'
 	@echo '  clean     :clean objects and dependencies.'
 	@echo '  distclean :clean objects, dependencies and executable etc.'
+	@echo '  sharedlib :compile and generate shared library (*.so).'
+	@echo '  staticlib :compile and generate static library (*.a).'
 	@echo '  NODEPENDS :make without generating dependencies.'
 	@echo '  install   :install executable program.'
 	@echo '  uninstall :uninstall executable program.'
@@ -515,6 +585,7 @@ endif
 # Kevin Zhou   2018-02-19  v0.4       修正当BUILD_PATH非.时无法跟踪头文件变化
 # Kevin Zhou   2018-05-20  v0.5       增加链接可执行程序时的MAP文件生成
 # Kevin Zhou   2018-07-15  v0.6       优化头文件包含时的路径问题
+# Kevin Zhou   2018-08-09  v0.7       增加对编译生成动态库或静态库的支持
 ###############################################################################
 # 其它引用参考：
 # 1.Linux下Makefile生成*.d依赖文件及gcc -M -MF -MP -MG等相关选项说明
@@ -523,4 +594,13 @@ endif
 # https://blog.csdn.net/dj0379/article/details/17011237
 # 3.解决C文件包含的头文件修改了，但C文件不重新编译的问题
 # https://blog.csdn.net/szullc/article/details/85038875
+# 4.Linux下Makefile中动态链接库和静态链接库的生成与调用
+# http://blog.csdn.net/u011964923/article/details/73297443
+# https://blog.csdn.net/andylauren/article/details/70146701
+# https://www.cnblogs.com/jiqingwu/p/linux_dynamic_lib_create.html
+# 5.gcc编译选项fpic/fPIC, fpie/fPIE的说明
+# https://blog.csdn.net/baidu_31504167/article/details/99825999
+# 6.关于LIBRARY_PATH和LD_LIBRARY_PATH环境变量
+# http://blog.csdn.net/yasi_xi/article/details/8196011
+# http://blog.csdn.net/wishfly/article/details/52174901
 ###############################################################################
