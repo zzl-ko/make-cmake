@@ -22,13 +22,13 @@ MK_VERSION  := 0.8
 # 定制段，工程配置选项 START
 ###############################################################################
 # 编译类型，0: 可执行程序，1: 动态链接库，2: 静态链接库
-COM_TYPE     = 0
+COM_TYPE     = 2
 
 # 编译链接库时，（通常需要）去除的包含main函数的源文件，在此指明文件，不含后缀
 MAIN_FILE    = main
 
 # 最终目标，即可执行程序（或不含后缀的链接库）的名字
-BIN_NAME     = demo
+BIN_NAME     = utility
 
 # 存放工程源文件的目录路径（相对于本Makefile文件）。现仅支持当前路径不建议修改！
 SRC_PATH     = .
@@ -40,10 +40,10 @@ BIN_PATH     = bin
 BUILD_PATH   = build
 
 # true: 查找当前路径下所有文件夹中的源文件, false: 仅当前文件夹
-INC_SUB_DIRS = false
+INC_SUB_DIRS = true
 
 # true: 嵌套调用子目录下的Makefile, false: 仅执行当前Makefile
-INC_SUB_MAKE = true
+INC_SUB_MAKE = false
 
 # make的默认编译工作的模式（debug或release）
 MAKE_MODE    = release
@@ -645,7 +645,7 @@ endif
 # Kevin Zhou   2018-02-19  v0.4       修正当BUILD_PATH非.时无法跟踪头文件变化
 # Kevin Zhou   2018-05-20  v0.5       增加链接可执行程序时的MAP文件生成
 # Kevin Zhou   2018-07-15  v0.6       优化头文件包含时的路径问题
-# Kevin Zhou   2018-10-19  v0.7       增加编译动态或静态库，支持同时链接动态库和静态库
+# Kevin Zhou   2018-10-19  v0.7       增加编译动态或静态库，并支持同时链接动态库和静态库
 # Kevin Zhou   2018-11-22  v0.8       增加嵌套调用子目录下的Makefile
 ###############################################################################
 # 其它引用参考：
