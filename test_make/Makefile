@@ -24,7 +24,10 @@ MK_VERSION  := 1.0
 # 编译类型，0: 可执行程序，1: 动态链接库，2: 静态链接库，3: 内核模块
 COM_TYPE     = 3
 
-# 编译库或内核模块时，（通常需要）去除的包含main函数以及非模块所需源的文件，在此指明，不含后缀
+# 手动指定需要编译的源文件，后缀为.o（为空则默认自动遍历当前文件夹的所有源文件）
+OBJECTS      = module.o calc/calc.o utility/utility.o
+
+# 编译库或内核模块时，（通常需要）去除的包含main函数以及非模块所需源的文件，在此指明（不含后缀）
 MAIN_FILE    = main hello
 
 # 最终目标，即可执行程序（或不含后缀的链接库或内核模块）的名字
@@ -38,9 +41,6 @@ BIN_PATH     = bin
 
 # 在工程的顶层目录下创建的用于存放编译临时文件的目录（为.或空则不创建）
 BUILD_PATH   = build
-
-# 指定Linux内核源码所在路径（用于编译在指定某个特定版本内核下运行的模块，为空则使用本机版本）
-KERNEL_PATH  = 
 
 # true: 查找当前路径下所有文件夹中的源文件, false: 仅当前文件夹
 INC_SUB_DIRS = true
@@ -75,6 +75,9 @@ ARCH      := $(shell uname -m)
 
 # 当HOST_ARCH != ARCH时，应当使用交叉编译，在此指定交叉编译前缀
 CROSS_COMPILE := aarch64-linux-gnu-
+
+# 指定Linux内核源码所在路径（用于编译在指定某个特定版本内核下运行的模块，为空则使用本机版本）
+KERNEL_PATH  = 
 
 # 额外的头文件路径（形式为：-I路径；以空格分割），指定寻找头文件的目录
 INCLUDES  = -I$(SRC_PATH) -I./calc -I./utility
@@ -266,14 +269,15 @@ HDREXTS = .h .H .hh .hpp .HPP .h++ .hxx .hp
 # Delete the default suffixes rules.
 .SUFFIXES:
 
+ifeq ($(OBJECTS),)
 HEADERS = $(foreach d,$(SRCDIRS),$(wildcard $(addprefix $(d)/*,$(HDREXTS))))
 SOURCES = $(foreach d,$(SRCDIRS),$(wildcard $(addprefix $(d)/*,$(SRCEXTS))))
 SRC_CXX = $(filter-out %.c,$(SOURCES))
 OBJECTS = $(addprefix $(BUILD_PATH),$(patsubst ./%,/%,$(addsuffix .o,$(basename $(SOURCES)))))
+endif
 DEPENDS = $(OBJECTS:.o=.d)
 
-DEP_OPT = $(shell if `$(CC) --version | grep $(CC) >/dev/null`; then \
-                  echo "-MG -MM -MP"; else echo "-M"; fi )
+DEP_OPT     = $(shell if `$(CC) --version | grep $(CC) >/dev/null`; then echo "-MG -MM -MP"; else echo "-M"; fi )
 DEPEND      = $(CC)  $(CPPFLAGS) $(CFLAGS)   $(OCFLAGS) $(INCLUDES) $(DEP_OPT)
 DEPEND.d    = $(subst -g ,,$(DEPEND))
 COMPILE.c   = $(CC)  $(CPPFLAGS) $(CFLAGS)   $(OCFLAGS) $(INCLUDES)
@@ -305,7 +309,7 @@ export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OCFLAGS
 
 # compiler and linker flags when debug or release.
 kernelmod: export $(BIN_NAME)-objs := $(OBJECTS)
-kernelmod: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).ko
+kernelmod: export TARGET      := $(BIN_PATH)/$(BIN_NAME).ko
 staticlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).a
 sharedlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).so
 sharedlib: export COMPILE.c   += -fPIC
@@ -618,26 +622,27 @@ dbgMake:
 
 # Show variables (for debug use only.)
 show:
-	@echo 'BIN_NAME    :' $(BIN_NAME)
-	@echo 'BIN_PATH    :' $(BIN_PATH)
-	@echo 'BUILD_PATH  :' $(BUILD_PATH)
-	@echo 'INCLUDES    :' $(INCLUDES)
-	@echo 'LIBPATHS    :' $(LIBPATHS)
-	@echo 'LIBRARIES   :' $(LIBRARIES)
-	@echo 'SRCDIRS     :' $(SRCDIRS)
-	@echo 'HEADERS     :' $(HEADERS)
-	@echo 'SOURCES     :' $(SOURCES)
-	@echo 'SRC_CXX     :' $(SRC_CXX)
-	@echo 'OBJECTS     :' $(OBJECTS)
-	@echo 'DEPENDS     :' $(DEPENDS)
-	@echo 'DEPEND      :' $(DEPEND)
-	@echo 'DEPEND.d    :' $(DEPEND.d)
-	@echo 'COMPILE.c   :' $(COMPILE.c)
-	@echo 'COMPILE.cxx :' $(COMPILE.cxx)
-	@echo 'LINK.c      :' $(LINK.c)
-	@echo 'LINK.cxx    :' $(LINK.cxx)
-	@echo 'HOST_ARCH   :' $(HOST_ARCH)
-	@echo 'ARCH        :' $(ARCH)
+	@echo 'BIN_NAME     :' $(BIN_NAME)
+	@echo 'BIN_PATH     :' $(BIN_PATH)
+	@echo 'BUILD_PATH   :' $(BUILD_PATH)
+	@echo 'INCLUDES     :' $(INCLUDES)
+	@echo 'LIBPATHS     :' $(LIBPATHS)
+	@echo 'LIBRARIES    :' $(LIBRARIES)
+	@echo 'SRCDIRS      :' $(SRCDIRS)
+	@echo 'HEADERS      :' $(HEADERS)
+	@echo 'SOURCES      :' $(SOURCES)
+	@echo 'SRC_CXX      :' $(SRC_CXX)
+	@echo 'OBJECTS      :' $(OBJECTS)
+	@echo 'DEPENDS      :' $(DEPENDS)
+	@echo 'DEPEND       :' $(DEPEND)
+	@echo 'DEPEND.d     :' $(DEPEND.d)
+	@echo 'COMPILE.c    :' $(COMPILE.c)
+	@echo 'COMPILE.cxx  :' $(COMPILE.cxx)
+	@echo 'LINK.c       :' $(LINK.c)
+	@echo 'LINK.cxx     :' $(LINK.cxx)
+	@echo 'HOST_ARCH    :' $(HOST_ARCH)
+	@echo 'ARCH         :' $(ARCH)
+	@echo 'KERNEL_PATH  :' $(KERNEL_PATH)
 	@echo 'CROSS_COMPILE:' $(CROSS_COMPILE)
 	
 # Show help.
