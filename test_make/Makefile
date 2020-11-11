@@ -17,7 +17,7 @@
 #              5.对本Makefile可用的目标及相关帮助信息可通过make help得到。
 # History    : 参见文件末尾
 #==============================================================================
-MK_VERSION  := 1.0
+MK_VERSION  := 1.1
 
 # 定制段，工程配置选项 START
 ###############################################################################
@@ -25,7 +25,7 @@ MK_VERSION  := 1.0
 COM_TYPE     = 3
 
 # 手动指定需要编译的源文件，后缀为.o（为空则默认自动遍历当前文件夹的所有源文件）
-OBJECTS      = module.o calc/calc.o utility/utility.o
+# OBJECTS      = module.o calc/calc.o utility/utility.o
 
 # 编译库或内核模块时，（通常需要）去除的包含main函数以及非模块所需源的文件，在此指明（不含后缀）
 MAIN_FILE    = main hello
@@ -68,16 +68,16 @@ CXX       = g++
 # CC        = $(CXX)
 
 # 当前主机的架构类型
-HOST_ARCH := $(shell uname -m)
+HOST_ARCH ?= $(shell uname -m)
 
 # 目标主机的架构类型
-ARCH      := $(shell uname -m)
+ARCH      ?= arm64
 
 # 当HOST_ARCH != ARCH时，应当使用交叉编译，在此指定交叉编译前缀
-CROSS_COMPILE := aarch64-linux-gnu-
+CROSS_COMPILE ?= aarch64-linux-gnu-
 
 # 指定Linux内核源码所在路径（用于编译在指定某个特定版本内核下运行的模块，为空则使用本机版本）
-KERNEL_PATH  = 
+KERNEL_PATH   ?= /home/kevin/workspace/code/rockchip-linux-sdk/kernel
 
 # 额外的头文件路径（形式为：-I路径；以空格分割），指定寻找头文件的目录
 INCLUDES  = -I$(SRC_PATH) -I./calc -I./utility
@@ -138,10 +138,8 @@ ifneq  ($(HOST_ARCH), arm64)
   endif
 endif
 
+KERNEL_PATH  := $(shell if [ -z $(KERNEL_PATH) ];then echo "/lib/modules/$(shell uname -r)/build";else echo $(KERNEL_PATH);fi)
 EXTRA_CFLAGS += $(CPPFLAGS) $(CFLAGS) $(OCFLAGS) -D KERNEL_MODULE
-ifneq ($(KERNELRELEASE),)
-  obj-m := $(BIN_NAME).o
-else
 #==============================================================================
 # Shell used in this makefile(bash is used for 'echo -en')
 SHELL  = /bin/bash
@@ -193,7 +191,7 @@ ifeq ($(shell git describe > /dev/null 2>&1 ; echo $$?), 0)
   VERSION_HASH := $(word 5, $(VERSION))
   VERSION_STRING := \
     "$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_PATCH).$(VERSION_REVISION)-$(VERSION_HASH)"
-  override CFLAGS := $(CFLAGS) \
+    override CFLAGS := $(CFLAGS) \
     -D VERSION_MAJOR=$(VERSION_MAJOR) \
     -D VERSION_MINOR=$(VERSION_MINOR) \
     -D VERSION_PATCH=$(VERSION_PATCH) \
@@ -215,8 +213,6 @@ ifeq ($(BIN_PATH),)
 endif
 ifeq ($(BUILD_PATH),)
   BUILD_PATH := .
-else
-  BUILD_PATH := $(shell if [ $(COM_TYPE) -eq 3 ];then echo ".";else echo "$(BUILD_PATH)";fi)
 endif
 
 TARGET = $(shell if [ "$(BIN_PATH)" != "." ];then echo "$(BIN_PATH)/"; fi)$(BIN_NAME)
@@ -234,8 +230,6 @@ ifneq ($(LIBRARIES),)
 #   OCFLAGS += $(shell pkg-config --cflags $(LIBRARIES))
 #   LDFLAGS += $(shell pkg-config --libs   $(LIBRARIES))
 endif
-
-LDFLAGS += $(LIBPATHS) -Wl,-Map,$(TARGET).map
 
 # Get the dirs that store source files.
 ifeq ($(INC_SUB_DIRS),true)
@@ -275,8 +269,20 @@ SOURCES = $(foreach d,$(SRCDIRS),$(wildcard $(addprefix $(d)/*,$(SRCEXTS))))
 SRC_CXX = $(filter-out %.c,$(SOURCES))
 OBJECTS = $(addprefix $(BUILD_PATH),$(patsubst ./%,/%,$(addsuffix .o,$(basename $(SOURCES)))))
 endif
-DEPENDS = $(OBJECTS:.o=.d)
 
+ifneq ($(KERNELRELEASE),)
+# Specifies the sources files needed to compile the kernel module
+MODOBJS:= $(foreach f, $(MAIN_FILE), %/$(f).o)
+MODOBJS:= $(filter-out $(MODOBJS), $(OBJECTS))
+MODOBJS:= $(patsubst $(BUILD_PATH)/%, %, $(MODOBJS))
+
+obj-m  := $(BIN_NAME).o
+$(BIN_NAME)-objs := $(MODOBJS)
+else
+LDFLAGS+= $(LIBPATHS) -Wl,-Map,$(TARGET).map
+endif
+
+# Organizing compilation and linking options
 DEP_OPT     = $(shell if `$(CC) --version | grep $(CC) >/dev/null`; then echo "-MG -MM -MP"; else echo "-M"; fi )
 DEPEND      = $(CC)  $(CPPFLAGS) $(CFLAGS)   $(OCFLAGS) $(INCLUDES) $(DEP_OPT)
 DEPEND.d    = $(subst -g ,,$(DEPEND))
@@ -284,14 +290,6 @@ COMPILE.c   = $(CC)  $(CPPFLAGS) $(CFLAGS)   $(OCFLAGS) $(INCLUDES)
 COMPILE.cxx = $(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OCFLAGS) $(INCLUDES)
 LINK.c      = $(CC)  $(CPPFLAGS) $(CFLAGS)   $(OCFLAGS) $(INCLUDES) $(LDFLAGS)
 LINK.cxx    = $(CXX) $(CPPFLAGS) $(CXXFLAGS) $(OCFLAGS) $(INCLUDES) $(LDFLAGS)
-
-TMP_FILES  := $(foreach f, $(MAIN_FILE), %/$(f).o)
-TMP_FILES  := $(filter-out $(TMP_FILES), $(OBJECTS))
-TMP_FILES  := $(patsubst $(BUILD_PATH)/%, %, $(TMP_FILES))
-
-kernelmod: OBJECTS := $(TMP_FILES)
-kernelmod: DEPENDS := $(TMP_FILES:.o=.d)
-kernelmod: KERNEL_PATH := $(shell if [ -z $(KERNEL_PATH) ];then echo "/lib/modules/$(shell uname -r)/build";else echo $(KERNEL_PATH);fi)
 
 # Verbose option, to output compile and link commands
 export Verbose := false
@@ -308,12 +306,13 @@ export BIN_PATH BUILD_PATH ROOT_PATH
 export CFLAGS CXXFLAGS CPPFLAGS LDFLAGS OCFLAGS
 
 # compiler and linker flags when debug or release.
-kernelmod: export $(BIN_NAME)-objs := $(OBJECTS)
+kernelmod: export OBJECTS     := $(OBJECTS)
 kernelmod: export TARGET      := $(BIN_PATH)/$(BIN_NAME).ko
 staticlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).a
 sharedlib: export TARGET      := $(BIN_PATH)/lib$(BIN_NAME).so
 sharedlib: export COMPILE.c   += -fPIC
 sharedlib: export COMPILE.cxx += -fPIC
+ifneq ($(COM_TYPE),3)
 release:   export COMPILE.c   += $(RCFLAGS)
 release:   export COMPILE.cxx += $(RCFLAGS)
 release:   export LINK.c      += $(RLDFLAGS)
@@ -322,6 +321,8 @@ debug:     export COMPILE.c   += $(DCFLAGS)
 debug:     export COMPILE.cxx += $(DCFLAGS)
 debug:     export LINK.c      += $(DLDFLAGS)
 debug:     export LINK.cxx    += $(DLDFLAGS)
+DEPENDS = $(OBJECTS:.o=.d)
+endif
 
 # Create the directories used in the build.
 ifeq ($(shell if [ -d $(BUILD_PATH) ] && [ "."!=$(BUILD_PATH) ];then echo "true"; else echo "false"; fi),false)
@@ -683,7 +684,6 @@ ifndef NODEPENDS
  endif
 endif
 #==============================================================================
-endif # end of ifneq ($(KERNELRELEASE),)
 # 固定段 END
 ## End of the Makefile ###  Suggestions are welcome  ### All rights reserved ##
 ###############################################################################
@@ -701,6 +701,7 @@ endif # end of ifneq ($(KERNELRELEASE),)
 # Kevin Zhou   2018-11-22  v0.8       增加嵌套调用子目录下的Makefile
 # Kevin Zhou   2018-12-31  v0.9       增加编译生成Linux内核模块，增加交叉编译支持
 # Kevin Zhou   2019-06-18  v1.0       编译模式功能优化，重复功能代码合并
+# Kevin Zhou   2020-11-11  v1.1       修正（应用、库、内核模块）交叉编译的若干问题
 ###############################################################################
 # 其它引用参考：
 # 1.Linux下Makefile生成*.d依赖文件及gcc -M -MF -MP -MG等相关选项说明
@@ -719,13 +720,12 @@ endif # end of ifneq ($(KERNELRELEASE),)
 # http://blog.csdn.net/yasi_xi/article/details/8196011
 # http://blog.csdn.net/wishfly/article/details/52174901
 # 7.GCC中同时链接动态库和静态库(https://www.cnblogs.com/lidabo/p/6206504.html)
-# 8.折腾gcc/g++链接时.o文件及库的顺序问题
-# https://www.cnblogs.com/little-ant/p/3398885.html
+# 8.链接时.o文件及库的顺序问题(https://www.cnblogs.com/little-ant/p/3398885.html)
 # 9.pkg-config详解(http://blog.csdn.net/newchenxf/article/details/51750239)
 # 10.多文件目录下Makefile文件嵌套调用递归执行
 # https://www.cnblogs.com/Shirlies/p/4282182.html
-# 11.makefile专题：预定义变量的使用
-# https://blog.csdn.net/jacob__lei/article/details/79274145
+# 11.makefile预定义变量(https://blog.csdn.net/jacob__lei/article/details/79274145)
 # 12.多目录多源文件的Linux内核模块的Makefile
 # https://blog.csdn.net/liuzq/article/details/89172426
+# https://blog.csdn.net/zqixiao_09/article/details/50838043
 ###############################################################################
